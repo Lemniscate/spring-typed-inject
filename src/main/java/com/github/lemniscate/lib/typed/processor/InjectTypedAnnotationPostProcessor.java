@@ -121,12 +121,16 @@ public class InjectTypedAnnotationPostProcessor extends InstantiationAwareBeanPo
                     return;
                 }
             }
+
+            if( annotation.required() ){
+                String msg = "Couldn't find a match to inject into " + bean.getClass().getSimpleName() + "#" + field.getName();
+                throw new InjectTypedMatchNotFound(msg);
+            }
+        }else{
+            throw new IllegalStateException("Shouldn't be able to get here...");
         }
 
-        if( annotation.required() ){
-            String msg = "Couldn't find a match to inject into " + bean.getClass().getSimpleName() + "#" + field.getName();
-            throw new InjectTypedMatchNotFound(msg);
-        }
+
     }
 
     /**

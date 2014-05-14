@@ -1,137 +1,167 @@
 package com.github.lemniscate.lib.typed.processor;
 
 import com.github.lemniscate.lib.typed.annotation.InjectTyped;
-import org.springframework.aop.framework.AopProxy;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.InstantiationAwareBeanPostProcessorAdapter;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.GenericTypeResolver;
+import org.springframework.core.Ordered;
+import org.springframework.core.PriorityOrdered;
 import org.springframework.util.Assert;
 import org.springframework.util.ReflectionUtils;
 
-import javax.inject.Inject;
 import java.lang.reflect.*;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
+public class InjectTypedAnnotationPostProcessor extends InstantiationAwareBeanPostProcessorAdapter
+            implements PriorityOrdered, ApplicationContextAware {
 
-/**
- * @Author dave 5/12/14 8:50 PM
- */
-public class InjectTypedAnnotationPostProcessor extends InstantiationAwareBeanPostProcessorAdapter {
+    // TODO lots of cleanup...
 
-    @Inject
+
     private ApplicationContext ctx;
 
     @Override
     public Object postProcessBeforeInitialization(final Object bean, String beanName) throws BeansException {
-
-        ReflectionUtils.doWithFields( bean.getClass(), new ReflectionUtils.FieldCallback() {
+        ReflectionUtils.FieldCallback fieldHandler = new ReflectionUtils.FieldCallback() {
             @Override
             public void doWith(Field field) throws IllegalArgumentException, IllegalAccessException {
-                InjectTyped annotation = field.getAnnotation(InjectTyped.class);
-                String[] fieldNames = annotation.value();
-
-                Type type = field.getGenericType();
-                if( type instanceof ParameterizedType){
-                    ParameterizedType pt = (ParameterizedType) type;
-                    Type[] typeArgs = pt.getActualTypeArguments();
-
-                    if( typeArgs == null || typeArgs.length < 1 || typeArgs[0] instanceof TypeVariable ){
-
-                        typeArgs = foo(fieldNames, field.getDeclaringClass(), bean);
-                        if( typeArgs.length == 0 ){
-
-
-                            List<Class<?>> result = new ArrayList<Class<?>>();
-
-                            Class<?> superclass = bean.getClass().getSuperclass();
-                            Class<?>[] tempArgs = GenericTypeResolver.resolveTypeArguments(bean.getClass(), superclass);
-
-                            TypeVariable<?>[] superTypes = superclass.getTypeParameters();
-
-                            Assert.isTrue( typeArgs.length <= superTypes.length );
-                            for( int i = 0; i < typeArgs.length; i++ ){
-                                boolean found = false;
-                                for( int k = 0; k < superTypes.length; k++ ){
-                                    if( typeArgs[i].equals( superTypes[k]) ){
-                                        found = true;
-                                        result.add( tempArgs[k] );
-                                    }
-                                }
-                                if( !found ){
-                                    throw new RuntimeException("Couldn't match generic type");
-                                }
-                            }
-
-                            typeArgs = result.toArray(new Type[result.size()]);
-                        }
-
-
-                    }
-
-                    Map<String, ?> impls = ctx.getBeansOfType( field.getType() );
-                    for(Object service : impls.values()){
-                        Object target = service;
-                        Class<?> serviceClass = service.getClass();
-                        if( Proxy.isProxyClass(service.getClass()) ){
-                            InvocationHandler handler = Proxy.getInvocationHandler(service);
-                            if( handler != null ){
-                                Field f = ReflectionUtils.findField(handler.getClass(), "advised");
-                                ReflectionUtils.makeAccessible(f);
-                                Object src = ReflectionUtils.getField(f, handler);
-                                ProxyFactory factory = ((ProxyFactory) src);
-                                try {
-                                    target = factory.getTargetSource().getTarget();
-                                    serviceClass = target.getClass();
-                                } catch (Exception e) {
-                                    throw new RuntimeException("Blah");
-                                }
-                            }
-                        }
-
-
-
-                        Assert.isTrue( fieldNames.length == typeArgs.length, "Different number of type args to field names" );
-
-
-
-                        for( int i = 0; i < fieldNames.length; i++  ){
-                            String fieldName = fieldNames[i];
-                            Field classField = ReflectionUtils.findField(serviceClass, fieldName);
-                            classField.setAccessible(true);
-                            Class<?> classFieldValue = (Class<?>) ReflectionUtils.getField(classField, target);
-                            if( ((Class<?>) typeArgs[i]).isAssignableFrom(classFieldValue) ){
-                                field.setAccessible(true);
-                                field.set(bean, service);
-                                return;
-                            }
-                        }
-                    }
-                }
-
-                if( annotation.required() ){
-                    String msg = "Couldn't find a match to inject into " + bean.getClass().getSimpleName() + "#" + field.getName();
-                    throw new InjectTypedMatchNotFound(msg);
-                }
+                processField(bean, field);
             }
-        }, FILTER);
+        };
 
+        ReflectionUtils.doWithFields( bean.getClass(), fieldHandler, FILTER);
         return bean;
     }
 
-    private Type[] foo(String[] fieldNames, Class<?> serviceClass, Object hasFields){
+    @Override
+    public int getOrder() {
+        return Ordered.LOWEST_PRECEDENCE - 1;
+    }
+
+    @Override
+    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+        this.ctx = applicationContext;
+    }
+
+    public static class InjectTypedMatchNotFound extends RuntimeException{
+        public InjectTypedMatchNotFound(String message) {
+            super(message);
+        }
+    }
+
+    public void processField(Object bean, Field field) throws IllegalArgumentException, IllegalAccessException{
+        InjectTyped annotation = field.getAnnotation(InjectTyped.class);
+        String[] fieldNames = annotation.value();
+
+        Type type = field.getGenericType();
+        if( type instanceof ParameterizedType){
+            ParameterizedType pt = (ParameterizedType) type;
+            Type[] typeArgs = pt.getActualTypeArguments();
+
+            // if no concrete types, try the reverse lookup fields
+            if( typeArgs == null || typeArgs.length < 1 || typeArgs[0] instanceof TypeVariable ){
+
+                // if reverse lookup fields are empty, attempt the field names on the candidate object
+                // (meaning the candidate and the object needing injection have the same type hints)
+                String[] lookupFields = annotation.reverseLookupFields();
+                String[] lookupFieldNames = lookupFields.length == 0 ? fieldNames : lookupFields;
+                typeArgs = resolveTypeParameters(lookupFieldNames, field.getDeclaringClass(), bean);
+            }
+
+            Map<String, ?> implementations = ctx.getBeansOfType( field.getType() );
+            for(Object impl : implementations.values()){
+                Class<?> implClass = impl.getClass();
+
+
+                // TODO clean up this block
+                // look for a quick match on a concrete implementation
+                Class<?>[] implTypes = GenericTypeResolver.resolveTypeArguments(impl.getClass(), field.getType());
+                if( implTypes != null && implTypes.length >= typeArgs.length ){
+                    boolean matched = true;
+                    for(int i = 0; i < typeArgs.length; i++){
+                        if( !typeArgs[i].equals( implTypes[i])){
+                            matched = false;
+                            break;
+                        }
+                    }
+                    if( matched ){
+                        field.setAccessible(true);
+                        field.set(bean, impl);
+                        return;
+                    }
+                }
+
+                // Handle proxied objects
+                Object target = impl;
+                if( Proxy.isProxyClass(impl.getClass()) ){
+                    try {
+                        InvocationHandler handler = Proxy.getInvocationHandler(impl);
+                        if( handler != null ){
+                            Field f = ReflectionUtils.findField(handler.getClass(), "advised");
+                            ReflectionUtils.makeAccessible(f);
+                            Object src = ReflectionUtils.getField(f, handler);
+                            ProxyFactory factory = ((ProxyFactory) src);
+
+                            target = factory.getTargetSource().getTarget();
+                            implClass = target.getClass();
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed getting a proxied target...", e);
+                    }
+                }
+
+                Assert.isTrue( fieldNames.length == typeArgs.length, "Different number of type args to field names" );
+
+                if( matchFields(fieldNames, implClass, target, typeArgs) ){
+                    field.setAccessible(true);
+                    field.set(bean, impl);
+                    return;
+                }
+            }
+        }
+
+        if( annotation.required() ){
+            String msg = "Couldn't find a match to inject into " + bean.getClass().getSimpleName() + "#" + field.getName();
+            throw new InjectTypedMatchNotFound(msg);
+        }
+    }
+
+    /**
+     * Looks for type hints on the supplied instance with the specified fieldNames.
+     */
+    private Type[] resolveTypeParameters(String[] fieldNames, Class<?> clazz, Object instance){
         Type[] typeArgs = new Type[fieldNames.length];
         for( int i = 0; i < fieldNames.length; i++  ){
             String fieldName = fieldNames[i];
-            Field classField = ReflectionUtils.findField(serviceClass, fieldName);
+            Field classField = ReflectionUtils.findField(clazz, fieldName);
             classField.setAccessible(true);
-            Class<?> classFieldValue = (Class<?>) ReflectionUtils.getField(classField, hasFields);
+            Class<?> classFieldValue = (Class<?>) ReflectionUtils.getField(classField, instance);
             typeArgs[i] = classFieldValue;
         }
         return typeArgs;
+    }
+
+    /**
+     * Verifies that the fields on a given instance match typeArgs
+     */
+    private boolean matchFields(String[] fieldNames, Class<?> implClass, Object target, Type[] typeArgs){
+        for( int i = 0; i < fieldNames.length; i++  ){
+            String fieldName = fieldNames[i];
+            Field classField = ReflectionUtils.findField(implClass, fieldName);
+            if( classField == null ){
+                return false;
+            }
+
+            classField.setAccessible(true);
+            Class<?> classFieldValue = (Class<?>) ReflectionUtils.getField(classField, target);
+            if( ! ((Class<?>) typeArgs[i]).isAssignableFrom(classFieldValue) ){
+                return false;
+            }
+        }
+        return true;
     }
 
     private static final ReflectionUtils.FieldFilter FILTER = new ReflectionUtils.FieldFilter() {
@@ -141,13 +171,4 @@ public class InjectTypedAnnotationPostProcessor extends InstantiationAwareBeanPo
         }
     };
 
-    public static class InjectTypedMatchNotFound extends RuntimeException{
-        public InjectTypedMatchNotFound(String message) {
-            super(message);
-        }
-
-        public InjectTypedMatchNotFound(String message, Throwable cause) {
-            super(message, cause);
-        }
-    }
 }

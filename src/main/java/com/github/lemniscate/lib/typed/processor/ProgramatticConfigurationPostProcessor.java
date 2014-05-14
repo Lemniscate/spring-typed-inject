@@ -2,7 +2,6 @@ package com.github.lemniscate.lib.typed.processor;
 
 import com.github.lemniscate.lib.typed.util.JavassistUtil;
 import lombok.AccessLevel;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -12,11 +11,16 @@ import org.springframework.beans.factory.parsing.FailFastProblemReporter;
 import org.springframework.beans.factory.parsing.NullSourceExtractor;
 import org.springframework.beans.factory.parsing.ProblemReporter;
 import org.springframework.beans.factory.parsing.SourceExtractor;
-import org.springframework.beans.factory.support.*;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.BeanNameGenerator;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.AnnotationBeanNameGenerator;
 import org.springframework.context.annotation.PublicConfigurationClassBeanDefinitionReader;
 import org.springframework.context.annotation.PublicConfigurationClassParser;
+import org.springframework.core.Ordered;
+import org.springframework.core.PriorityOrdered;
 import org.springframework.core.env.Environment;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
@@ -25,10 +29,18 @@ import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.util.Assert;
 
 import javax.inject.Inject;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-public class ProgramatticConfigurationPostProcessor implements BeanDefinitionRegistryPostProcessor {
+public class ProgramatticConfigurationPostProcessor implements BeanDefinitionRegistryPostProcessor, PriorityOrdered {
+
+    @Override
+    public int getOrder() {
+        return Ordered.LOWEST_PRECEDENCE;
+    }
 
     private final List<Class<?>> configs;
 
@@ -63,8 +75,6 @@ public class ProgramatticConfigurationPostProcessor implements BeanDefinitionReg
                 resourceLoader, environment, importBeanNameGenerator);
 
         reader.loadBeanDefinitions(parser.getConfigurationClasses());
-
-        reader.toString();
     }
 
     @Override

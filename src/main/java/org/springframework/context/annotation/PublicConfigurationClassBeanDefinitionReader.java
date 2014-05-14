@@ -1,6 +1,5 @@
 package org.springframework.context.annotation;
 
-import lombok.extern.log4j.Log4j;
 import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
 import org.springframework.beans.factory.annotation.AnnotatedGenericBeanDefinition;
 import org.springframework.beans.factory.annotation.Autowire;

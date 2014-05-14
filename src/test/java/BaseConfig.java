@@ -1,6 +1,4 @@
-
 import com.github.lemniscate.lib.typed.annotation.BeanMarker;
-import org.springframework.context.annotation.Bean;
 import org.springframework.core.GenericTypeResolver;
 
 public class BaseConfig<T> {

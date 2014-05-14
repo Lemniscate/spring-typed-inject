@@ -53,6 +53,7 @@ public class ConfigTest {
             return new ProgramatticConfigurationPostProcessor.Builder()
                     .registerGenerated( BaseConfig.class, new Class<?>[]{ String.class } )
                     .registerGenerated( BaseConfig.class, new Class<?>[]{ Long.class } )
+                    .registerGenerated( ComplexConfig.class, new Class<?>[]{ Integer.class } )
                     .build();
         }
 

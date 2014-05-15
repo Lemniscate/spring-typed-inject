@@ -29,12 +29,9 @@ import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.util.Assert;
 
 import javax.inject.Inject;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
-@RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+@RequiredArgsConstructor
 public class ProgramatticConfigurationPostProcessor implements BeanDefinitionRegistryPostProcessor, PriorityOrdered {
 
     @Override
@@ -100,6 +97,10 @@ public class ProgramatticConfigurationPostProcessor implements BeanDefinitionReg
 
         public ProgramatticConfigurationPostProcessor build(){
             return new ProgramatticConfigurationPostProcessor(configs);
+        }
+
+        public List<Class<?>> getConfigs() {
+            return Collections.unmodifiableList(configs);
         }
     }
 

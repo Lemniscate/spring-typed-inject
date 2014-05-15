@@ -13,8 +13,11 @@ import javassist.bytecode.annotation.StringMemberValue;
 import org.springframework.context.annotation.Bean;
 
 import javax.inject.Inject;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class JavassistUtil {
+
+    private AtomicLong idGen = new AtomicLong();
 
     public Class<?> createTypedSubclass(Class<?> baseImpl, Class<?>[] classes) {
         try{
@@ -43,6 +46,7 @@ public class JavassistUtil {
 
             // let's tag on a Impl at the end of the name, just in case
             name.append("_Impl");
+            name.append(idGen.incrementAndGet());
 
             // Generate our actual base class
             CtClass ctBaseImpl = pool.get(baseImpl.getName());
